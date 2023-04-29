@@ -1,6 +1,5 @@
 function createCalendarEvent() {
 
-  // Demo Video - https://drive.google.com/drive/u/0/folders/1VRkh0GJDuoZleFLrDgt9bLX20C8Ria2r
   //Input
   // TODO: Select central timezone in AppScript > Settings and Google Sheet > File > Settings
   let bookstallCalendarId = "780d9c73f715c3b3fc6a1967dad50e00893b82648981f899b623e9e211594e4d@group.calendar.google.com";
@@ -12,7 +11,7 @@ function createCalendarEvent() {
     meetingStart : "Meeting Start (CDT)",
     meetingEnd : "Meeting End (CDT)",
     meetingDescription : "Meeting Description",
-
+    meetingTitle : "Meeting Title"
   }
 
   let ui = null;
@@ -35,6 +34,7 @@ function createCalendarEvent() {
   let meetingStartColumnNumber = dataRangeValues[0].indexOf(headerNames.meetingStart);
   let meetingEndColumnNumber = dataRangeValues[0].indexOf(headerNames.meetingEnd);
   let meetingDescriptionColumnNumber = dataRangeValues[0].indexOf(headerNames.meetingDescription);
+  let meetingTitleColumnNumber = dataRangeValues[0].indexOf(headerNames.meetingTitle);
 
 
   //Validate all header columns
@@ -65,23 +65,16 @@ if(specificCenterRowNumber == -1) {
 }
 
 // Validate data required to create event
-let eventTitle = "BookStall Meeting - " + specificCenterName;
   
 let meetingStart =  dataRangeValues[specificCenterRowNumber][meetingStartColumnNumber]; 
 let meetingEnd =  dataRangeValues[specificCenterRowNumber][meetingEndColumnNumber];
 let centerCoordinatorEmail = dataRangeValues[specificCenterRowNumber][centerCordinatorEmailColumnNumber];
 let bookstallVolunteerEmails = dataRangeValues[specificCenterRowNumber][bookstallVolunteerEmailsColumnNumber];
 let meetingDescription = dataRangeValues[specificCenterRowNumber][meetingDescriptionColumnNumber];
+let meetingTitle = dataRangeValues[specificCenterRowNumber][meetingTitleColumnNumber];
 
 
 if(!meetingStart || !meetingEnd) {
-  console.log("Please Validate Meeting Start and End Date");
-  if(showUIInteraction)
-    ui.alert("ERROR : Please Validate Meeting Start and End Date");
-  return;
-}
-
-if(!meetingStart || !meetingEnd ) {
   console.log("Please Validate Meeting Start and End Date");
   if(showUIInteraction)
     ui.alert("ERROR : Please Validate Meeting Start and End Date");
@@ -92,6 +85,14 @@ if(!Date.parse(meetingStart) || !Date.parse(meetingEnd) ) {
   console.log("Please provide valid date as Meeting Start and End Date");
   if(showUIInteraction)
     ui.alert("ERROR : Please provide valid date as Meeting Start and End Date");
+  return;
+}
+
+
+if(!meetingTitle ) {
+  console.log("Please provide meeting Title");
+  if(showUIInteraction)
+    ui.alert("ERROR : Please provide meeting title");
   return;
 }
 
@@ -125,20 +126,25 @@ if(existingNoteStr) {
   }
 }
 
-  console.log("Detected existing event ID " + existingNote.eventId);
 
 let foundEvent = null;
 if(existingNote.eventId) {
+  console.log("Detected existing event ID " + existingNote.eventId + " : " + existingNote.lastUpdatedDate);
   let event = calendar.getEventById(existingNote.eventId);
-  if(event && event.getStartTime() > new Date()) {
-      console.log("Found existing meeting. Will update the existing event " + event.getId() + " scheduled on " + event.getStartTime());
+
+  if(event)
+    console.log("Fetched existing event " + event.getId() + " : Last updated date = " + event.getLastUpdated() + ": Meeting Start Time"+ event.getStartTime());
+// 
+  if(event && 
+  event.getStartTime() > new Date() && // if event is not in past
+  event.getLastUpdated().getTime() == new Date(existingNote.lastUpdatedDate).getTime()) // if event is not updated/deleted manually
+  {
+      console.log("Found existing meeting. Will update the existing event.");
       foundEvent = event;
   }
 }
 
-console.log("Meeting Start " + meetingStart);
-
-event = foundEvent || calendar.createEvent(eventTitle, new Date(meetingStart) , new Date(meetingEnd));
+event = foundEvent || calendar.createEvent(meetingTitle, new Date(meetingStart) , new Date(meetingEnd));
 
 event.setDescription(meetingDescription)
 event.setTime(new Date(meetingStart) , new Date(meetingEnd));
@@ -151,7 +157,7 @@ let bookstallVolunteerEmailsArr = bookstallVolunteerEmails.split(',');
 bookstallVolunteerEmailsArr.forEach(email => {if(email) event.addGuest(email)});
 
 const note = {
-  scheduledDate : new Date().toDateString(),
+  lastUpdatedDate : event.getLastUpdated(),
   eventId : event.getId()
 }
 
