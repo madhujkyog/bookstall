@@ -1,7 +1,9 @@
 function createCalendarEvent() {
 
   //Input
-  // TODO: Select central timezone in AppScript > Settings and Google Sheet > File > Settings
+  //Pre-requisite
+  //1. Add Calendar services in App Script to use https://developers.google.com/apps-script/advanced/calendar?authuser=0
+  //2. Select central timezone in AppScript > Settings and Google Sheet > File > Settings
   let bookstallCalendarId = "780d9c73f715c3b3fc6a1967dad50e00893b82648981f899b623e9e211594e4d@group.calendar.google.com";
   let showUIInteraction = true; //Make it false in testing mode
   let headerNames = {
@@ -127,48 +129,93 @@ if(existingNoteStr) {
 }
 
 
-let foundEvent = null;
+let create = true;
+let existingEventId = null;
 if(existingNote.eventId) {
   console.log("Detected existing event ID " + existingNote.eventId + " : " + existingNote.lastUpdatedDate);
-  let event = calendar.getEventById(existingNote.eventId);
+  let existingEvent = Calendar.Events.get(bookstallCalendarId, existingNote.eventId)
 
-  if(event)
-    console.log("Fetched existing event " + event.getId() + " : Last updated date = " + event.getLastUpdated() + ": Meeting Start Time"+ event.getStartTime());
-// 
-  if(event && 
-  event.getStartTime() > new Date() && // if event is not in past
-  event.getLastUpdated().getTime() == new Date(existingNote.lastUpdatedDate).getTime()) // if event is not updated/deleted manually
+  if(existingEvent) {
+    console.log("Fetched existing event with id = " + existingEvent.getId() 
+      + " : Status = " + existingEvent.status 
+      + " : Meeting Start Time = "+ new Date(existingEvent.start.dateTime));
+
+      console.log("Is meeting not in past = "+ (new Date(existingEvent.start.dateTime) > new    Date   ()));
+
+      console.log("Is meeting not cancelled =" + (existingEvent.status != "cancelled"));
+  }
+ 
+  if(
+    existingEvent && 
+    new Date(existingEvent.start.dateTime) > new Date() && // if event is not in past
+    existingEvent.status != "cancelled") // if event is not cancelled
   {
       console.log("Found existing meeting. Will update the existing event.");
-      foundEvent = event;
+      create = false; // update existing meeting
+      existingEventId = existingEvent.getId()
   }
 }
 
-event = foundEvent || calendar.createEvent(meetingTitle, new Date(meetingStart) , new Date(meetingEnd));
+try {
+    let eventData = {
+      summary : meetingTitle,
+      description : meetingDescription,
+      start: {
+        dateTime: new Date(meetingStart).toISOString()
+      },
+      end: {
+        dateTime: new Date(meetingEnd).toISOString()
+      },
+      attendees: [
+        { email: centerCoordinatorEmail }
+      ],
+      // Orange background. Use Calendar.Colors.get() for the full list.
+      colorId: 6
+    };
 
-event.setDescription(meetingDescription)
-event.setTime(new Date(meetingStart) , new Date(meetingEnd));
-event.addGuest(centerCoordinatorEmail);
-event.setGuestsCanInviteOthers(true);
+    let bookstallVolunteerEmailsArr = bookstallVolunteerEmails.split(',');
+    bookstallVolunteerEmailsArr.forEach(email => {if(email) eventData.attendees.push({"email" : email})});
+    let event = null;
+    if (create) {
+      event = Calendar.Events.insert(
+                    eventData,
+                    bookstallCalendarId,
+                    { sendUpdates : 'all' },
+                    );
+      console.log('Successfully inserted event: ' + event.id);
+    } else {
+      console.log('Updating event : ' + existingEventId + " with " + JSON.stringify(eventData));
+      event = Calendar.Events.update(
+              eventData,
+              bookstallCalendarId,
+              existingEventId,
+              { sendUpdates : 'all' },
+              );
+      console.log('Successfully updated event: ' + event.id);
 
-event.addEmailReminder(60); // reminder 60 mins before 
+    }
 
-let bookstallVolunteerEmailsArr = bookstallVolunteerEmails.split(',');
-bookstallVolunteerEmailsArr.forEach(email => {if(email) event.addGuest(email)});
+    console.log(event);
+    const note = {
+      lastUpdatedDate : event.updated ? event.updated : event.created,
+      eventId : event.id
+    }
 
-const note = {
-  lastUpdatedDate : event.getLastUpdated(),
-  eventId : event.getId()
-}
-
-// set event id as comment
-dataRange.getCell(specificCenterRowNumber + 1 , meetingDescriptionColumnNumber + 1)
-  .setNote(JSON.stringify(note));
+    // set event id as comment
+    dataRange.getCell(specificCenterRowNumber + 1 , meetingDescriptionColumnNumber + 1)
+      .setNote(JSON.stringify(note));
 
 
-console.log("Sucessfully scheduled meeting " + new Date(meetingStart));
-if(showUIInteraction)
-  ui.alert("Sucessfully scheduled meeting!");
-return;
+    console.log("Sucessfully scheduled meeting " + new Date(meetingStart));
+    if(showUIInteraction)
+      ui.alert("Sucessfully scheduled meeting!");
+    return;
+    
+  } catch (e) {
+    console.log('Upsert threw an exception: ' + e);
+    return;
+  }
+
+
 
 }
